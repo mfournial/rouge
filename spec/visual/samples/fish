@@ -1,0 +1,360 @@
+# From: https://github.com/fish-shell/fish-shell/blob/master/tests/checks/basic.fish
+# GPL
+
+# Comments in odd places don't cause problems
+for i in 1 2 # Comment on same line as command
+# Comment inside loop
+    for j in a b
+		# Double loop
+        echo $i$j
+	end;
+end
+
+# Escaped newlines
+echo foo\ bar
+echo foo\
+bar
+echo "foo\
+bar"
+echo 'foo\
+bar'
+
+for i in \
+    a b c
+    echo $i
+end
+
+
+# Simple function tests
+
+function foo
+    echo >../test/temp/fish_foo.txt $argv
+end
+
+foo hello
+
+cat ../test/temp/fish_foo.txt |read foo
+
+if test $foo = hello;
+  echo Test 2 pass
+else
+  echo Test 2 fail
+end
+
+function foo
+    printf 'Test %s' $argv[1]; echo ' pass'
+end
+
+foo 3a
+
+for i in Test for continue break and switch builtins problems;
+	switch $i
+		case Test
+			printf "%s " $i
+		case "for"
+			printf "%s " 3b
+		case "c*"
+			echo pass
+		case break
+			continue
+			echo fail
+		case and
+			break
+			echo fail
+		case "*"
+			echo fail
+	end
+end
+
+set -l sta
+if eval true
+	if eval false
+		set sta fail
+	else
+		set sta pass
+	end
+else
+	set sta fail
+end
+echo Test 4 $sta
+
+# Testing builtin status
+
+function test_builtin_status
+	return 1
+end
+test_builtin_status
+if [ $status -eq 1 ]
+	set sta pass
+else
+	set sta fail
+end
+echo Test 5 $sta
+
+####################
+# echo tests
+echo 'abc\ndef'
+echo -e 'abc\ndef'
+echo -e 'abc\zdef'
+echo -e 'abc\41def'
+echo -e 'abc\041def'
+echo -e 'abc\121def'
+echo -e 'abc\1212def'
+echo -e 'abc\cdef' # won't output a newline!
+echo ''
+echo -
+echo -h
+echo -ne '\376' | display_bytes
+echo -e 'abc\x21def'
+echo -e 'abc\x211def'
+
+# Comments allowed in between lines (#1987)
+echo before comment \
+  # comment
+  after comment
+
+# Backslashes are part of comments and do not join lines (#1255)
+# This should execute false, not echo it
+echo -n # comment\
+false
+
+function always_fails
+    if true
+        return 1
+    end
+end
+
+# Verify $argv set correctly in sourced scripts (#139)
+echo 'echo "source argv {$argv}"' | source
+echo 'echo "source argv {$argv}"' | source -
+echo 'echo "source argv {$argv}"' | source - abc
+echo 'echo "source argv {$argv}"' | source - abc def
+
+always_fails
+echo $status
+
+# Test that subsequent cases do not blow away the status from previous ones
+for val in one two three four
+	switch $val
+	case one
+		/bin/sh -c 'exit 1'
+	case two
+		/bin/sh -c 'exit 2'
+	case three
+		/bin/sh -c 'exit 3'
+	end
+	echo $status
+end
+
+# Test that the `switch` builtin itself does not blow away status before evaluating a case
+false
+switch one
+case one
+	echo $status
+end
+
+#test contains -i
+contains -i string a b c string d
+contains -i string a b c d; or echo nothing
+contains -i -- string a b c string d
+contains -i -- -- a b c; or echo nothing
+contains -i -- -- a b c -- v
+
+# Test if, else, and else if
+if true
+	echo alpha1.1
+	echo alpha1.2
+else if false
+	echo beta1.1
+	echo beta1.2
+else if false
+	echo gamma1.1
+	echo gamma1.2
+else
+	echo delta1.1
+	echo delta1.2
+end
+
+if false
+	echo alpha2.1
+	echo alpha2.2
+else if begin ; true ; end
+	echo beta2.1
+	echo beta2.2
+else if begin ; echo nope2.1; false ; end
+	echo gamma2.1
+	echo gamma2.2
+else
+	echo delta2.1
+	echo delta2.2
+end
+
+if false
+	echo alpha3.1
+	echo alpha3.2
+else if begin ; echo yep3.1; false ; end
+	echo beta3.1
+	echo beta3.2
+else if begin ; echo yep3.2; true ; end
+	echo gamma3.1
+	echo gamma3.2
+else
+	echo delta3.1
+	echo delta3.2
+end
+
+if false
+	echo alpha4.1
+	echo alpha4.2
+else if begin ; echo yep4.1; false ; end
+	echo beta4.1
+	echo beta4.2
+else if begin ; echo yep4.2; false ; end
+	echo gamma4.1
+	echo gamma4.2
+else
+	echo delta4.1
+	echo delta4.2
+end
+
+if test ! -n "abc"
+else if test -n "def"
+	echo "epsilon5.2"
+else if not_a_valid_command but it should be OK because a previous branch was taken
+	echo "epsilon 5.3"
+else if test ! -n "abc"
+	echo "epsilon 5.4"	
+end
+
+# Ensure builtins work
+# https://github.com/fish-shell/fish-shell/issues/359
+if not echo skip1 > /dev/null
+	echo "zeta 6.1"
+else if echo skip2 > /dev/null
+	echo "zeta 6.2"
+end
+
+echo '###'
+
+# Ensure 'type' works
+# https://github.com/fish-shell/fish-shell/issues/513
+function fish_test_type_zzz
+	true
+end
+# Should succeed
+type -q fish_test_type_zzz ; echo $status
+# Should fail
+type -q -f fish_test_type_zzz ; echo $status
+
+# ensure that builtins that produce no output can still truncate files
+# (bug PCA almost reintroduced!)
+echo abc > ../test/temp/file_truncation_test.txt
+cat ../test/temp/file_truncation_test.txt
+echo -n > ../test/temp/file_truncation_test.txt
+cat ../test/temp/file_truncation_test.txt
+
+# Test events.
+
+
+# This pattern caused a crash; github issue #449
+
+set -g var before
+
+function test1 --on-event test
+    set -g var $var:test1
+    functions -e test2
+end
+
+function test2 --on-event test
+    # this should not run, as test2 gets removed before it has a chance of running
+    set -g var $var:test2a
+end
+emit test
+
+echo $var
+
+
+function test3 --on-event test3
+    echo received event test3 with args: $argv
+end
+
+emit test3 foo bar
+
+# test empty argument
+emit
+
+# Test break and continue
+# This should output Ping once
+for i in a b c
+    if not contains $i c ; continue ; end
+    echo Ping
+end
+
+# This should output Pong not at all
+for i in a b c
+    if not contains $i c ; break ; end
+    echo Pong
+end
+
+# This should output Foop three times, and Boop not at all
+set i a a a
+while contains $i a
+    set -e i[-1]
+    echo Foop
+    continue
+    echo Boop
+end
+
+# This should output Doop once
+set i a a a
+while contains $i a
+    set -e i[-1]
+    echo Doop
+    break
+    echo Darp
+end
+
+# Test implicit cd. This should do nothing.
+./
+
+# Test special for loop expansion
+# Here we the name of the variable is derived from another variable
+set var1 var2
+for $var1 in 1 2 3
+    echo -n $var2
+end
+echo
+
+# Test status -n
+eval 'status -n
+status -n
+status -n'
+
+# Test support for unbalanced blocks
+function try_unbalanced_block
+    $fish -c "echo $argv | source " 2>&1 | grep "Missing end" 1>&2
+end
+try_unbalanced_block 'begin'
+try_unbalanced_block 'while true'
+try_unbalanced_block 'for x in 1 2 3'
+try_unbalanced_block 'switch abc'
+try_unbalanced_block 'function anything'
+try_unbalanced_block 'if false'
+
+# Ensure that quoted keywords work
+'while' false; end
+"while" false; end
+"wh"'ile' false; "e"nd
+
+# BOM checking (see #1518). But only in UTF8 locales.
+# (locale guarded because of musl)
+if command -sq locale; and string match -qi '*utf-8*' -- (locale)
+    echo \uFEFF"echo bom_test" | source
+else
+    echo "echo bom_test" | source
+end
+
+# Comments abutting text (#953)
+echo not#a#comment
+echo is # a # comment
+
